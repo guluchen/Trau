@@ -223,14 +223,16 @@ typedef struct _AutomatonStringData
   */
  void check(Z3_theory t);
 
- /**
-   \brief Simple theory example.
-   The theory has a binary function f, and a unit element u.
+std::string node_to_SMT(Z3_theory t, Z3_ast node);
 
-   The theory axioms are:
-   - <tt>forall X. f(X, u) = X</tt>
-   - <tt>forall X. f(u, X) = X</tt>
-  */
+    /**
+      \brief Simple theory example.
+      The theory has a binary function f, and a unit element u.
+
+      The theory axioms are:
+      - <tt>forall X. f(X, u) = X</tt>
+      - <tt>forall X. f(u, X) = X</tt>
+     */
  Z3_theory mk_theory(Z3_context ctx);
 
  /**
@@ -249,6 +251,10 @@ typedef struct _AutomatonStringData
   * check if leng = 1 --> skip generate new constraints in indexof, lastindexof...
   */
  bool canSkipExt(Z3_theory t, Z3_ast node);
+
+std::string getSMTConstString(Z3_theory t, Z3_ast node);
+bool isBooleanVariable(Z3_theory t, Z3_ast n);
+std::string customizeStringToSMT(std::string s);
 
  /*
   * convert a node to string

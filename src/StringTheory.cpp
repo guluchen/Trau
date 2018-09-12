@@ -5981,6 +5981,15 @@ Z3_bool Th_final_check(Z3_theory t) {
 	__debugPrint(logFile, "                cb_final_check @ Level [%d] \n", sLevel);
 	__debugPrint(logFile, "=============================================================\n");
 #endif
+    printf("check final @ Level [%d] \n", sLevel);
+
+    Z3_context ctx = Z3_theory_get_context(t);
+    Z3_ast ctxAssign = Z3_get_context_assignment(ctx);
+
+    //Print SMT
+
+	std::cout<<node_to_SMT(t, ctxAssign)<<std::endl;
+	std::cout<<"(check-sat)"<<std::endl;
 
 	if (config.printingConstraints)
 		done = true;
@@ -6018,7 +6027,6 @@ Z3_bool Th_final_check(Z3_theory t) {
 		languageDefined = true;
 	}
 
-	Z3_context ctx = Z3_theory_get_context(t);
 	if (hasLanguage == true) {
 		/* doing under approximation */
 		for (const auto& it : containPairBoolMap){
@@ -9825,4 +9833,218 @@ void overApproxController() {
 	// clean up
 
 	Z3_del_context(ctx);
+}
+
+
+std::string node_to_SMT_helper(Z3_theory t, Z3_ast node, std::set<string>& definitions){
+    Z3_context ctx = Z3_theory_get_context(t);
+    if (isAutomatonFunc(t, node)) {
+        return "\"" + getSMTConstString(t, node) + "\"";
+    } else if (isConstStr(t, node)) {
+        std::string tmp = Z3_ast_to_string(ctx, node);
+        if (tmp.length() > 0 && tmp[0] == '|' && tmp[tmp.length() - 1] == '|') {
+            tmp = tmp.substr(1, tmp.length() - 2);
+        }
+        tmp = "\"" + tmp + "\"";
+        return tmp;
+    } else if (isVariable(t, node)) {
+        string name = Z3_ast_to_string(ctx, node);
+        string def_string;
+        if (isStrVariable(t, node)) {
+            def_string = "(declare-fun " + name + " () String)\n";
+        }else if(isBooleanVariable(t, node)){
+            def_string = "(declare-fun " + name + " () Bool)\n";
+        }else{
+            def_string="(declare-fun "+name+" () Int)\n";
+        }
+        definitions.insert(def_string);
+
+        return name;
+    }
+    else {
+//		__debugPrint(logFile, "%d node: %s\n", __LINE__, Z3_ast_to_string(ctx, node));
+        Z3_ast funcType = Z3_func_decl_to_ast(ctx, Z3_get_app_decl(ctx, Z3_to_app(ctx, node)));
+        std::string typeStr = Z3_ast_to_string(ctx, funcType);
+        int args = Z3_get_app_num_args(ctx, Z3_to_app(ctx, node));
+        std::vector<std::string> elements;
+        for (int i = 0; i < args; ++i) {
+            Z3_ast n = Z3_get_app_arg(ctx, Z3_to_app(ctx, node), i);
+            if (typeStr.find("declare-fun and") != std::string::npos){
+                elements.emplace_back(node_to_SMT_helper(t, n, definitions)+"\n");
+            }else {
+                elements.emplace_back(node_to_SMT_helper(t, n, definitions));
+            }
+        }
+        std::string ret = "";
+        for (const auto &s : elements)
+            ret = ret + " " + s;
+
+
+        if (typeStr.find("declare-fun +") != std::string::npos) {
+            ret = "(+" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun *") != std::string::npos) {
+            ret = "(*" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun =") != std::string::npos) {
+            Z3_ast ast1=Z3_get_app_arg(ctx, Z3_to_app(ctx, node), 1);
+            Z3_ast ast0=Z3_get_app_arg(ctx, Z3_to_app(ctx, node), 0);
+
+
+            if(args==2&& isAutomatonFunc(t,ast1)){
+                ret = "(str.in.re " + elements[0] +" [["+ elements[1]+"]])";
+            }else if(args==2&& isAutomatonFunc(t,ast0) ){
+                ret = "(str.in.re " + elements[1] +" [["+ elements[0]+"]])";
+
+            }else {
+                ret = "(=" + ret + ")";
+            }
+
+            return ret;
+        } else if (typeStr.find("declare-fun >=") != std::string::npos) {
+            ret = "(>=" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun <=") != std::string::npos) {
+            ret = "(<=" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun >") != std::string::npos) {
+            ret = "(>" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun <") != std::string::npos) {
+            ret = "(<" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun ite") != std::string::npos) {
+            ret = "(ite" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun and") != std::string::npos) {
+            ret = "(and" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun or") != std::string::npos) {
+            ret = "(or" + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[CONCAT]) != std::string::npos) {
+            ret = "(" + config.languageMap[CONCAT] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[INDEXOF2]) != std::string::npos) {
+            ret = "(" + config.languageMap[INDEXOF2] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[INDEXOF]) != std::string::npos) {
+            ret = "(" + config.languageMap[INDEXOF] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[CONTAINS]) != std::string::npos) {
+            ret = "(" + config.languageMap[CONTAINS] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[SUBSTRING]) != std::string::npos) {
+            ret = "(" + config.languageMap[SUBSTRING] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[LASTINDEXOF]) != std::string::npos) {
+            ret = "(" + config.languageMap[LASTINDEXOF] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[STARTSWITH]) != std::string::npos) {
+            ret = "(" + config.languageMap[STARTSWITH] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[ENDSWITH]) != std::string::npos) {
+            ret = "(" + config.languageMap[ENDSWITH] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[REPLACEALL]) != std::string::npos) {
+            ret = "(" + config.languageMap[REPLACEALL] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[REPLACE]) != std::string::npos) {
+            ret = "(" + config.languageMap[REPLACE] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[TOLOWER]) != std::string::npos) {
+            ret = "(" + config.languageMap[TOLOWER] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[TOUPPER]) != std::string::npos) {
+            ret = "(" + config.languageMap[TOUPPER] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[CHARAT]) != std::string::npos) {
+            ret = "(" + config.languageMap[CHARAT] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun " + config.languageMap[LENGTH]) != std::string::npos) {
+            ret = "(" + config.languageMap[LENGTH] + ret + ")";
+            return ret;
+        } else if (typeStr.find("declare-fun not") != std::string::npos) {
+            ret = "(not  " + ret + ")";
+            return ret;
+        } else {
+
+            std::string tmp = Z3_ast_to_string(ctx, node);
+            if (tmp.length() > 0 && tmp[0] == '|' && tmp[tmp.length() - 1] == '|') {
+                tmp = tmp.substr(1, tmp.length() - 2);
+                tmp = "\"" + tmp + "\"";
+            }
+            return tmp;
+        }
+    }
+}
+
+/*
+  * return str if it is const or automatadet
+  */
+std::string getSMTConstString(Z3_theory t, Z3_ast node){
+    Z3_context ctx = Z3_theory_get_context(t);
+
+    if (isConstStr(t, node)) {
+        std::string tmp = getConstStrValue(t, node);
+        std::string s = "";
+        for (unsigned i = 0 ; i < tmp.size(); ++i) {
+            s+= tmp[i];
+            if (tmp[i] == '\\' && i != tmp.size() - 1 && tmp[i + 1] == '\\' && config.languageVersion == 20)
+                ++i;
+        }
+        return s;
+    }
+    else {
+        std::string tmp = Z3_ast_to_string(ctx, Z3_get_app_arg(ctx, Z3_to_app(ctx, node), 0));
+        std::string s = "";
+        for (unsigned i = 0 ; i < tmp.size(); ++i) {
+            s+= tmp[i];
+            if (tmp[i] == '\\' && i != tmp.size() - 1 && tmp[i + 1] == '\\' && config.languageVersion == 20)
+                ++i;
+        }
+        return customizeStringToSMT(s);
+    }
+    return NULL;
+}
+
+std::string customizeStringToSMT(std::string s) {
+    if (s[0] == '|') s = s.substr(1, s.length() - 2);
+    if (s[0] == '"') s = s.substr(1, s.length() - 2);
+    const size_t pos = s.find("!!");
+    if (s.compare("!!") != 0 && s.find("$$") < 2)
+        if (pos != std::string::npos)
+            s = s.substr(pos + 2);
+
+    for (unsigned int i = 0; i < s.size(); ++i)
+        if (s[i] == '~')
+            s[i] = '|';
+
+    return s;
+}
+/*
+ * only collect leaf, SMT26 string format
+ */
+std::string node_to_SMT(Z3_theory t, Z3_ast node) {
+	std::set<string> definitions;
+
+	string ret= "(assert "+node_to_SMT_helper(t,node,definitions)+")";
+	for (const auto& definition : definitions){
+		ret = definition+ret;
+	}
+
+	return ret;
+}
+
+/*
+ *
+ */
+bool isBooleanVariable(Z3_theory t, Z3_ast n) {
+    Z3_context ctx = Z3_theory_get_context(t);
+    Z3_sort s = Z3_get_sort(ctx, n);
+    Z3_sort_kind sk = Z3_get_sort_kind(ctx, s);
+    if (sk == Z3_BOOL_SORT)
+        return true;
+    else
+        return false;
 }
