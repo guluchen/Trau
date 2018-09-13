@@ -9839,7 +9839,11 @@ void overApproxController() {
 std::string node_to_SMT_helper(Z3_theory t, Z3_ast node, std::set<string>& definitions){
     Z3_context ctx = Z3_theory_get_context(t);
     if (isAutomatonFunc(t, node)) {
-        return "\"" + getSMTConstString(t, node) + "\"";
+        if(isNonDetAutomatonFunc(t,node)) {
+            return "[[\"" + getSMTConstString(t, node) + "\"]]";
+        }else{
+            return "\"" + getSMTConstString(t, node) + "\"";
+        }
     } else if (isConstStr(t, node)) {
         std::string tmp = Z3_ast_to_string(ctx, node);
         if (tmp.length() > 0 && tmp[0] == '|' && tmp[tmp.length() - 1] == '|') {
